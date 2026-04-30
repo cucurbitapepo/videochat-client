@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "608793976663",
+    "project_id": "videochat-1e748",
+    "storage_bucket": "videochat-1e748.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:608793976663:android:73932e299f30ebbcb6a812",
+        "android_client_info": {
+          "package_name": "com.example.videochat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDy7wHt6HC7tWkM5_2l8fX9G0WwXLXUTJs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:608793976663:android:6acfe94ba3f27fb2b6a812",
+        "android_client_info": {
+          "package_name": "com.example.videochat.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDy7wHt6HC7tWkM5_2l8fX9G0WwXLXUTJs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
