@@ -29,6 +29,7 @@ import com.example.videochat.R;
 import com.example.videochat.api.ApiClient;
 import com.example.videochat.dialog.IncomingCallDialog;
 import com.example.videochat.dto.RoomTokenResponse;
+import com.example.videochat.encryption.E2eeKeyManager;
 import com.example.videochat.livekit.LiveKitClient;
 import com.example.videochat.livekit.LiveKitManager;
 import com.example.videochat.service.CallForegroundService;
@@ -108,6 +109,7 @@ public class CallActivity extends AppCompatActivity {
   private boolean isMicrophoneEnabled = true;
   private boolean isCameraEnabled = true;
   private boolean isServiceRunning = false;
+  private boolean isCallAccepted = false;
 
 
   // CameraX
@@ -115,6 +117,10 @@ public class CallActivity extends AppCompatActivity {
   //  private androidx.camera.core.Preview cameraXPreview;
   private CameraSelector cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA;
 
+  // E2EE
+  private E2eeKeyManager e2eeKeyManager;
+  private boolean isE2eeReady = false;
+  private boolean isCaller;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -143,12 +149,15 @@ public class CallActivity extends AppCompatActivity {
   }
 
   private void handleIntent(Intent intent) {
+    isCallAccepted = false;
     if (intent != null && "CALL_NOTIFICATION".equals(intent.getAction())) {
       String callId = intent.getStringExtra("CALL_ID");
-      boolean isCaller = intent.getBooleanExtra("IS_CALLER", false);
+      isCaller = intent.getBooleanExtra("IS_CALLER", false);
 
       getIntent().putExtra("CALL_ID", callId);
       getIntent().putExtra("IS_CALLER", isCaller);
+    } else {
+      isCaller = intent != null && intent.getBooleanExtra("IS_CALLER", false);
     }
   }
 
@@ -251,11 +260,29 @@ public class CallActivity extends AppCompatActivity {
   // ==================== LiveKit ====================
 
   private void initializeLiveKit() {
-    boolean isCaller = getIntent().getBooleanExtra("IS_CALLER", false);
     Log.d(TAG, "initializeLiveKit() called, isCaller=" + isCaller);
+
+    if (liveKitClient != null) {
+      Log.w(TAG, "LiveKitClient already initialized, resetting");
+      liveKitClient.clearRemoteVideoView();
+      liveKitClient.clearLocalVideoView();
+      liveKitClient.disconnect();
+      LiveKitClient.resetInstance();
+    }
+
     liveKitClient = LiveKitClient.getInstance(this);
-    liveKitClient.setRemoteVideoView(remoteVideoView);
-    liveKitClient.setLocalVideoView(localVideoView);
+    if (remoteVideoView != null && localVideoView != null) {
+      liveKitClient.setRemoteVideoView(remoteVideoView);
+      liveKitClient.setLocalVideoView(localVideoView);
+    } else {
+      Log.w(TAG, "Video views not available, re-initializing from layout");
+      remoteVideoView = findViewById(R.id.remote_video_view);
+      localVideoView = findViewById(R.id.local_video_view);
+      if (remoteVideoView != null && localVideoView != null) {
+        liveKitClient.setRemoteVideoView(remoteVideoView);
+        liveKitClient.setLocalVideoView(localVideoView);
+      }
+    }
 
     liveKitClient.setAvatarCallback(new LiveKitManager.AvatarCallback() {
       @Override
@@ -302,12 +329,11 @@ public class CallActivity extends AppCompatActivity {
           hasConnectedOnce = true;
         }
         Log.d(TAG, "Room connected: " + room.getName());
-        connectionStatus.setText("Соединение установлено");
+//        connectionStatus.setText("Соединение установлено");
 //        connectionStatus.setVisibility(View.GONE);
 
         remoteVideoView.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT);
         room.initVideoRenderer(remoteVideoView);
-        //
         localVideoView.setMirror(true);
         localVideoView.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL);
         localVideoView.setVisibility(View.VISIBLE);
@@ -317,7 +343,25 @@ public class CallActivity extends AppCompatActivity {
         room.initVideoRenderer(localVideoView);
 
         updateLocalCameraUI(isCameraEnabled);
-        enableLocalTracks();
+
+        if (isCaller) {
+          if (isCallAccepted) {
+            if (isE2eeReady) {
+              enableLocalTracks();
+            } else {
+              startE2eeKeyExchange(room);
+            }
+          } else {
+            Log.d(TAG, "Waiting for call acceptance before starting E2EE");
+            connectionStatus.setText("Ожидание ответа...");
+          }
+        } else {
+          if (isE2eeReady) {
+            enableLocalTracks();
+          } else {
+            startE2eeKeyExchange(room);
+          }
+        }
         isInitialized = true;
       } else {
         if (!hasConnectedOnce) {
@@ -332,33 +376,32 @@ public class CallActivity extends AppCompatActivity {
         isInitialized = false;
         showErrorNotification("Соединение с сервером разорвано. Проверьте подключение к интернету.");
       }
+      updateConnectionStatus();
     };
 
 
     speakerObserver = participant -> {
       if (participant != null) {
-        // Можно добавить индикацию активного спикера
       }
     };
 
-    // Подписываемся на изменения состояния комнаты
     liveKitClient.getRoomLiveData().observe(this, roomObserver);
-
-    // Подписываемся на изменения активного спикера
     liveKitClient.getActiveSpeakerLiveData().observe(this, speakerObserver);
   }
 
   private void enableLocalTracks() {
+    if (!isE2eeReady) {
+      Log.d(TAG, "Waiting for E2EE readiness before enabling tracks");
+      return;
+    }
     if (liveKitClient == null) return;
 
-    // Получаем локального участника
     LocalParticipant localParticipant = liveKitClient.getLocalParticipant();
     if (localParticipant == null) {
       Log.w(TAG, "Local participant not available yet");
       return;
     }
 
-    // Включаем микрофон и камеру
     BuildersKt.launch(
             CoroutineScopeKt.MainScope(),
             Dispatchers.getMain(),
@@ -366,7 +409,6 @@ public class CallActivity extends AppCompatActivity {
             (scope, continuation) -> {
               boolean audioEnabled = false;
 
-              // Пробуем включить аудио, но не крашимся при ошибке
               try {
                 localParticipant.setMicrophoneEnabled(true, EMPTY_CONTINUATION);
                 audioEnabled = true;
@@ -375,7 +417,6 @@ public class CallActivity extends AppCompatActivity {
                 Log.w(TAG, "Microphone unavailable, continuing without audio", e);
               }
 
-              // Всегда пытаемся включить видео
               try {
                 Log.d(TAG, "Trying to enable camera, isCameraEnabled=" + isCameraEnabled);
                 localParticipant.setCameraEnabled(isCameraEnabled, EMPTY_CONTINUATION);
@@ -406,7 +447,6 @@ public class CallActivity extends AppCompatActivity {
 
   private void setupCallFlow() {
     String callId = getIntent().getStringExtra("CALL_ID");
-    boolean isCaller = getIntent().getBooleanExtra("IS_CALLER", false);
     Long receiverId = getIntent().getLongExtra("RECEIVER_ID", -1);
 
     Log.d(TAG, "callId=" + callId + ", isCaller=" + isCaller);
@@ -432,6 +472,14 @@ public class CallActivity extends AppCompatActivity {
           finishCall("Вызов отклонён");
         } else if ("ended".equals(status)) {
           finishCall("Звонок завершён");
+        } else if ("accepted".equals(status) && isCaller && !isCallAccepted) {
+          Log.d(TAG, "Call accepted by recipient, starting E2EE key exchange");
+          isCallAccepted = true;
+          updateConnectionStatus();
+          Room currentRoom = liveKitClient.getRoomLiveData().getValue();
+          if (currentRoom != null && !isE2eeReady) {
+            startE2eeKeyExchange(currentRoom);
+          }
         }
       }
     });
@@ -470,6 +518,10 @@ public class CallActivity extends AppCompatActivity {
                           tokenResponse.getServerUrl(),
                           tokenResponse.getToken()
                   );
+                  if (!isCaller) {
+                    isCallAccepted = true;
+                    updateConnectionStatus();
+                  }
                 } else {
                   String error = "unknown";
                   try {
@@ -518,6 +570,53 @@ public class CallActivity extends AppCompatActivity {
                               Toast.LENGTH_SHORT).show();
                     }
             );
+  }
+
+  // ==================== E2EE ====================
+  private void startE2eeKeyExchange(Room room) {
+    String callId = getIntent().getStringExtra("CALL_ID");
+    String currentUserUsername = JwtUtils.getCurrentUserUsername();
+    String initiatorDhPublicKey = getIntent().getStringExtra("INITIATOR_DH_PUBLIC_KEY");
+
+    if (callId == null || currentUserUsername == null) {
+      Log.e(TAG, "Cannot start E2EE: missing callId or userUsername");
+      enableLocalTracks();
+      return;
+    }
+
+    Log.d(TAG, "Starting E2EE key exchange, isCaller=" + isCaller +
+               ", hasInitiatorKey=" + (initiatorDhPublicKey != null));
+
+    e2eeKeyManager = new E2eeKeyManager(
+            WebSocketManager.getInstance(this).getStompClientManager(),
+            room,
+            callId,
+            currentUserUsername,
+            isCaller,
+            initiatorDhPublicKey,
+            () -> {
+              Log.d(TAG, "E2EE key exchange completed successfully");
+              isE2eeReady = true;
+
+              Room currentRoom = liveKitClient.getRoomLiveData().getValue();
+
+              if (currentRoom != null) {
+                enableLocalTracks();
+              }
+              return kotlin.Unit.INSTANCE;
+            },
+            (error) -> {
+              Log.e(TAG, "E2EE key exchange failed", error);
+              runOnUiThread(() -> {
+                String message = "Ошибка настройки шифрования: " + error.getMessage();
+                showErrorNotification(message);
+                enableLocalTracks();
+              });
+              return kotlin.Unit.INSTANCE;
+            }
+    );
+
+    e2eeKeyManager.start();
   }
 
   // ==================== UI Controls ====================
@@ -604,6 +703,18 @@ public class CallActivity extends AppCompatActivity {
     });
   }
 
+  private void updateConnectionStatus() {
+    runOnUiThread(() -> {
+      if (isCaller && !isCallAccepted) {
+        connectionStatus.setText("Ожидание ответа...");
+        Log.d(TAG, "Status updated: Waiting for acceptance");
+      } else if (hasConnectedOnce) {
+        connectionStatus.setText("Соединение установлено");
+        Log.d(TAG, "Status updated: Connected");
+      }
+    });
+  }
+
   // ==================== Permissions ====================
 
   private void checkCameraPermission() {
@@ -633,7 +744,6 @@ public class CallActivity extends AppCompatActivity {
     } else if (requestCode == AUDIO_PERMISSION_CODE) {
       if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
         Log.d(TAG, "Audio permission granted");
-        // Можно повторно попробовать включить микрофон
         if (liveKitClient != null) {
           try {
             liveKitClient.toggleMicrophone();
@@ -643,7 +753,6 @@ public class CallActivity extends AppCompatActivity {
         }
       } else {
         Toast.makeText(this, "Разрешение на запись аудио отклонено", Toast.LENGTH_SHORT).show();
-        // Можно отключить микрофон и продолжить только с видео
         isMicrophoneEnabled = false;
       }
     }
@@ -660,13 +769,11 @@ public class CallActivity extends AppCompatActivity {
   @Override
   protected void onPause() {
     super.onPause();
-    // Не останавливаем сервис при переходе в фон, только при завершении звонка
   }
 
   @Override
   protected void onNewIntent(Intent intent) {
     super.onNewIntent(intent);
-    // Обрабатываем новый интент, если активность уже запущена
     handleIntent(intent);
   }
 
@@ -676,6 +783,8 @@ public class CallActivity extends AppCompatActivity {
     Log.d(TAG, "onDestroy() called");
 
 //    stopCameraXPreview();
+
+    clearVideoRenderers();
 
     if (roomNotificationDisposable != null && !roomNotificationDisposable.isDisposed()) {
       roomNotificationDisposable.dispose();
@@ -705,8 +814,14 @@ public class CallActivity extends AppCompatActivity {
       Log.d(TAG, "speakerObserver removed");
     }
 
+    if (e2eeKeyManager != null) {
+      e2eeKeyManager.cleanup();
+      e2eeKeyManager = null;
+      Log.d(TAG, "E2eeKeyManager cleaned up");
+    }
+
     disposables.clear();
-    hasConnectedOnce = false;
+//    hasConnectedOnce = false;
     LiveKitClient.resetInstance();
     stopForegroundService();
     Log.d(TAG, "onDestroy() completed");
@@ -772,6 +887,31 @@ public class CallActivity extends AppCompatActivity {
     return null;
   }
 
+  private void clearVideoRenderers() {
+    Log.d(TAG, "Clearing video renderers");
+
+    if (remoteVideoView != null) {
+      try {
+        remoteVideoView.release();
+      } catch (Exception e) {
+        Log.w(TAG, "Error releasing remoteVideoView", e);
+      }
+      remoteVideoView = null;
+    }
+
+    if (localVideoView != null) {
+      try {
+        localVideoView.release();
+      } catch (Exception e) {
+        Log.w(TAG, "Error releasing localVideoView", e);
+      }
+      localVideoView = null;
+    }
+
+    isInitialized = false;
+    hasConnectedOnce = false;
+  }
+
   private void finishCall(String reason) {
     Toast.makeText(this, reason, Toast.LENGTH_SHORT).show();
 
@@ -799,6 +939,16 @@ public class CallActivity extends AppCompatActivity {
               .setNegativeButton("Попробовать снова", (dialog, which) -> {
                 String callId = getIntent().getStringExtra("CALL_ID");
                 if (callId != null) {
+                  clearVideoRenderers();
+
+                  LiveKitClient.resetInstance();
+                  liveKitClient = LiveKitClient.getInstance(this);
+
+                  if (remoteVideoView != null && localVideoView != null) {
+                    liveKitClient.setRemoteVideoView(remoteVideoView);
+                    liveKitClient.setLocalVideoView(localVideoView);
+                  }
+
                   connectToLiveKit(callId);
                 }
               })
@@ -816,7 +966,6 @@ public class CallActivity extends AppCompatActivity {
 
             @Override
             public void resumeWith(Object o) {
-              // Ничего не делаем
             }
           };
 }

@@ -11,7 +11,6 @@ import io.livekit.android.room.participant.LocalParticipant;
 import io.livekit.android.room.participant.Participant;
 import io.livekit.android.room.track.LocalVideoTrack;
 import io.livekit.android.room.track.TrackException;
-import kotlinx.coroutines.CoroutineScope;
 
 public class LiveKitClient {
   private static LiveKitClient instance;

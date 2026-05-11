@@ -5,6 +5,9 @@ import android.util.Log
 import io.livekit.android.ConnectOptions
 import io.livekit.android.LiveKit
 import io.livekit.android.RoomOptions
+import io.livekit.android.e2ee.BaseKeyProvider
+import io.livekit.android.e2ee.E2EEOptions
+import io.livekit.android.e2ee.E2EEState
 import io.livekit.android.events.RoomEvent
 import io.livekit.android.events.collect
 import io.livekit.android.room.Room
@@ -21,6 +24,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
+import livekit.LivekitModels
+import java.util.Base64;
 
 object LiveKitRoomConnector {
 
@@ -41,7 +46,13 @@ object LiveKitRoomConnector {
             context,
             RoomOptions(
                 dynacast = true,
-                adaptiveStream = true
+                adaptiveStream = true,
+                e2eeOptions = E2EEOptions(
+                    keyProvider = BaseKeyProvider(
+                        enableSharedKey = true
+                    ),
+                    encryptionType = LivekitModels.Encryption.Type.GCM
+                )
             )
         )
 
@@ -76,6 +87,24 @@ object LiveKitRoomConnector {
         }
 
         return room
+    }
+
+    @JvmStatic
+    fun setGroupKey(room: Room, keyIndex: Int, groupKey: ByteArray) {
+        val keyProvider = room.e2eeManager?.keyProvider as? BaseKeyProvider
+        if (keyProvider != null) {
+            Log.d("LiveKitRoomConnector", "Setting E2EE key: index=$keyIndex, keyLength=${groupKey.size}, first8=${groupKey.take(8).joinToString("") { "%02x".format(it) }}")
+
+            val keyBase64 = Base64.getEncoder().encodeToString(groupKey)
+            keyProvider.setSharedKey(
+                keyBase64,
+                keyIndex
+            )
+            keyProvider.enableSharedKey = true;
+            Log.d("LiveKitRoomConnector", "E2EE key set successfully")
+        } else {
+            Log.e("LiveKitRoomConnector", "Failed to set E2EE key: keyProvider is null or not BaseKeyProvider")
+        }
     }
 
     private fun handleRoomEvent(
@@ -182,7 +211,6 @@ object LiveKitRoomConnector {
 
                 callback.onParticipantConnected(participant)
 
-                // Обработаем уже опубликованные треки этого участника
                 for ((publication, track) in participant.videoTrackPublications) {
                     if (track is RemoteVideoTrack && publication.subscribed) {
                         callback.onTrackSubscribed(participant, track)
@@ -195,8 +223,39 @@ object LiveKitRoomConnector {
                 callback.onParticipantDisconnected(event.participant)
             }
 
+            is RoomEvent.TrackE2EEStateEvent -> {
+                Log.d(
+                    "LiveKitRoomConnector",
+                    "TrackE2EEStateEvent: track=${event.track?.sid}, state=${event.state}, participant=${event.participant?.identity}"
+                )
+
+                when (event.state) {
+                    E2EEState.MISSING_KEY -> {
+                        Log.w(
+                            "LiveKitRoomConnector",
+                            "Track ${event.track?.sid} is MISSING_KEY — check if setSharedKey was called"
+                        )
+                    }
+                    E2EEState.OK -> {
+                        Log.d(
+                            "LiveKitRoomConnector",
+                            "Track ${event.track?.sid} is now OK (encrypted)"
+                        )
+                    }
+                    E2EEState.ENCRYPTION_FAILED -> {
+                        Log.e(
+                            "LiveKitRoomConnector",
+                            "Track ${event.track?.sid} encryption failed"
+                        )
+                    }
+                    else -> {
+                        Log.d("LiveKitRoomConnector", "Track ${event.track?.sid} E2EE state: ${event.state}")
+                    }
+                }
+            }
+
             else -> {
-                Log.d(TAG, "ℹ️ Unhandled event: ${event::class.simpleName}")
+                Log.d(TAG, "Unhandled event: ${event::class.simpleName}")
             }
         }
     }

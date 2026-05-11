@@ -226,8 +226,8 @@ public class LiveKitManager implements LiveKitEventCallback {
     isReconnecting = false;
     roomLiveData.postValue(room);
 
-    Log.d(TAG, "LiveData updated, enabling local tracks");
-    enableLocalTracks();
+//    Log.d(TAG, "LiveData updated, enabling local tracks");
+//    enableLocalTracks();
 
     processExistingParticipants();
   }

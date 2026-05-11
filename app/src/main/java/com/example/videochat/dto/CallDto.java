@@ -10,6 +10,16 @@ public class CallDto {
   private LocalDateTime createdAt;
   private LocalDateTime endedAt;
 
+  public String getInitiatorDhPublicKey() {
+    return initiatorDhPublicKey;
+  }
+
+  public void setInitiatorDhPublicKey(String initiatorDhPublicKey) {
+    this.initiatorDhPublicKey = initiatorDhPublicKey;
+  }
+
+  private String initiatorDhPublicKey;
+
   public String getCallId() {
     return callId;
   }

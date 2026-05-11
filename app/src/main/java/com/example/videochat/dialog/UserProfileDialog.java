@@ -21,6 +21,9 @@ import com.example.videochat.dto.CallDto;
 import com.example.videochat.dto.ContactDto;
 import com.example.videochat.dto.ContactRequestDto;
 import com.example.videochat.dto.UserSearchResultDto;
+import com.example.videochat.encryption.E2eeKeyManager;
+import com.example.videochat.service.CallService;
+import com.example.videochat.util.JwtUtils;
 import com.example.videochat.websocket.StompClientManager;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
@@ -93,30 +96,52 @@ public class UserProfileDialog extends BottomSheetDialogFragment {
   }
 
   private void initiateCall() {
-    CallDto callDto = new CallDto();
-    callDto.setParticipants(Collections.singleton(user.getId()));
+    String currentUserUsername = JwtUtils.getCurrentUserUsername();
+    String callId = "call-" + System.currentTimeMillis();
 
-    ApiClient.getCallApi().createCall(callDto).enqueue(new Callback<CallDto>() {
+    CallDto callRequest = new CallDto();
+    callRequest.setParticipants(Collections.singleton(user.getId()));
+    callRequest.setCallId(callId);
+
+    if (currentUserUsername != null) {
+      try {
+        String initiatorPublicKey = E2eeKeyManager.generateInitiatorPublicKeyForInvite(
+                callId,
+                currentUserUsername
+        );
+        callRequest.setInitiatorDhPublicKey(initiatorPublicKey);
+        Log.d("CALL", "Added initiator DH public key to CallDto: " +
+                      (initiatorPublicKey != null ? initiatorPublicKey : "null"));
+      } catch (Exception e) {
+        Log.e("CALL", "Failed to generate DH key pair for invite", e);
+      }
+    } else {
+      Log.w("CALL", "Current user username not found, cannot generate E2EE key");
+    }
+
+    CallService callService = new CallService();
+    callService.createCall(callRequest, new CallService.CallCallback() {
       @Override
-      public void onResponse(Call<CallDto> call, Response<CallDto> response) {
-        if (response.isSuccessful() && response.body() != null) {
-          Log.d("CALL", "Call created: callId=" + response.body().getCallId());
+      public void onResult(boolean success, CallDto result) {
+        if (success && result != null) {
+          Log.d("CALL", "Call created: callId=" + result.getCallId());
+
+          if(!callId.equals(result.getCallId())) {
+            Log.w("CALL", "Server returned different callId: expected= " + callId + ", got=" + result.getCallId());
+          }
           Intent intent = new Intent(requireContext(), CallActivity.class);
-          intent.putExtra("CALL_ID", response.body().getCallId());
+          intent.putExtra("CALL_ID", result.getCallId());
           intent.putExtra("IS_CALLER", true);
           intent.putExtra("RECEIVER_ID", user.getId());
           intent.putExtra(IncomingCallDialog.ARG_CALLER_NAME, user.getUsername());
+
           Log.d("CALL", "Starting CallActivity");
           requireContext().startActivity(intent);
           dismiss();
         } else {
+          Log.e("CALL", "Failed to create call: success=" + success + ", result=" + result);
           Toast.makeText(requireContext(), "Не удалось начать звонок", Toast.LENGTH_SHORT).show();
         }
-      }
-
-      @Override
-      public void onFailure(Call<CallDto> call, Throwable t) {
-        Toast.makeText(requireContext(), "Ошибка сети: " + t.getMessage(), Toast.LENGTH_SHORT).show();
       }
     });
   }

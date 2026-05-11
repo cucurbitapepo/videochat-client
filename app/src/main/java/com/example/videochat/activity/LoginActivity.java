@@ -16,7 +16,10 @@ import com.example.videochat.api.AuthService;
 import com.example.videochat.dto.AuthRequest;
 import com.example.videochat.dto.AuthResponse;
 import com.example.videochat.dto.FcmTokenDto;
+import com.example.videochat.util.JwtUtils;
 import com.google.firebase.messaging.FirebaseMessaging;
+
+import org.json.JSONException;
 
 import java.time.LocalDateTime;
 
@@ -118,6 +121,15 @@ public class LoginActivity extends AppCompatActivity {
     //TODO: Android KeyStore для шифрования токена
     SharedPreferences prefs = getSharedPreferences("app_data", MODE_PRIVATE);
     prefs.edit().putString("auth_token", token).apply();
+
+    String currentUserUsername;
+    try {
+      currentUserUsername = JwtUtils.getUsernameFromToken(token);
+    } catch (JSONException e) {
+      Log.w("LoginActivity", "Не удалось получить имя пользователя из токена аутентификации.");
+      currentUserUsername = "Ошибка";
+    }
+    prefs.edit().putString("current_user", currentUserUsername).apply();
   }
 
   private void sendFcmTokenToServer(String token) {

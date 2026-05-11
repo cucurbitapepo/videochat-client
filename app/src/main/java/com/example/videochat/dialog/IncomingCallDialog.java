@@ -29,10 +29,12 @@ public class IncomingCallDialog extends DialogFragment {
   private static final String ARG_CALL_ID = "callId";
   private static final String ARG_CALLER_ID = "callerId";
   public static final String ARG_CALLER_NAME = "callerName";
+  public static final String ARG_INITIATOR_DH_PUBLIC_KEY = "initiatorDhPublicKey";
 
   private String callId;
   private String callerName;
   private Long callerId;
+  private String initiatorDhPublicKey;
   private CallService callService;
 
   public static IncomingCallDialog newInstance(NotificationDto notification) {
@@ -45,6 +47,12 @@ public class IncomingCallDialog extends DialogFragment {
     args.putString(ARG_CALL_ID, notification.getData());
     args.putLong(ARG_CALLER_ID, notification.getCallerId());
     args.putString(ARG_CALLER_NAME, notification.getCallerName());
+    if (notification.getInitiatorDhPublicKey() != null) {
+      Log.d("IncomingCallDialog", "initiator public key is: " + notification.getInitiatorDhPublicKey());
+      args.putString(ARG_INITIATOR_DH_PUBLIC_KEY, notification.getInitiatorDhPublicKey());
+    } else {
+      Log.d("IncomingCallDialog", "initiator public key is NULL");
+    }
     IncomingCallDialog fragment = new IncomingCallDialog();
     fragment.setArguments(args);
     return fragment;
@@ -57,6 +65,7 @@ public class IncomingCallDialog extends DialogFragment {
       callId = getArguments().getString(ARG_CALL_ID);
       callerId = getArguments().getLong(ARG_CALLER_ID);
       callerName = getArguments().getString(ARG_CALLER_NAME);
+      initiatorDhPublicKey = getArguments().getString(ARG_INITIATOR_DH_PUBLIC_KEY);
     }
 
     if (callId == null || callerId == -1L) {
@@ -151,6 +160,10 @@ public class IncomingCallDialog extends DialogFragment {
     intent.putExtra("RECEIVER_ID", callerId);
     if (callerName != null) {
       intent.putExtra(ARG_CALLER_NAME, callerName);
+    }
+    if (initiatorDhPublicKey != null) {
+      intent.putExtra("INITIATOR_DH_PUBLIC_KEY", initiatorDhPublicKey);
+      Log.d("DIALOG", "Passing initiator DH public key to CallActivity");
     }
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 

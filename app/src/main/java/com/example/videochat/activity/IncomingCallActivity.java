@@ -14,6 +14,7 @@ public class IncomingCallActivity extends AppCompatActivity {
   public static final String EXTRA_CALL_ID = "callId";
   public static final String EXTRA_CALLER_ID = "callerId";
   public static final String EXTRA_CALLER_NAME = "callerName";
+  public static final String EXTRA_INITIATOR_DH_PUBLIC_KEY = "initiatorDhPublicKey";
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -29,6 +30,7 @@ public class IncomingCallActivity extends AppCompatActivity {
     String callId = getIntent().getStringExtra(EXTRA_CALL_ID);
     Long callerId = getIntent().getLongExtra(EXTRA_CALLER_ID, -1L);
     String callerName = getIntent().getStringExtra(EXTRA_CALLER_NAME);
+    String initiatorDhPublicKey = getIntent().getStringExtra(EXTRA_INITIATOR_DH_PUBLIC_KEY);
 
     if (callId == null || callerId == -1L || callerName == null) {
       Log.e("INCOMING", "Invalid intent data: callId=" + callId + ", callerId=" + callerId);
@@ -42,6 +44,7 @@ public class IncomingCallActivity extends AppCompatActivity {
     notification.setCallerId(callerId);
     notification.setCallerName(callerName);
     notification.setTimestamp(System.currentTimeMillis());
+    notification.setInitiatorDhPublicKey(initiatorDhPublicKey);
     showIncomingCallDialog(notification);
   }
 

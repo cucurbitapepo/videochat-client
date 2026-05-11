@@ -6,6 +6,9 @@ import android.util.Log;
 import androidx.lifecycle.MutableLiveData;
 
 import com.example.videochat.dto.NotificationDto;
+import com.example.videochat.encryption.DhPublicKeyMessage;
+import com.example.videochat.encryption.E2eeReadyMessage;
+import com.example.videochat.encryption.WrappedGroupKeyMessage;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
@@ -13,6 +16,10 @@ import com.google.gson.JsonSyntaxException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+
+import io.reactivex.Flowable;
+import io.reactivex.exceptions.Exceptions;
+import io.reactivex.functions.Consumer;
 
 import io.reactivex.Completable;
 import io.reactivex.disposables.CompositeDisposable;
@@ -219,5 +226,144 @@ public class StompClientManager {
     if ("CALL_REQUEST".equals(notification.getType())) {
       Log.d(TAG, "Incoming call request: " + notification.getData());
     }
+  }
+
+  public Completable sendDhPublicKey(String callId, String userId, String publicKeyBase64) {
+    DhPublicKeyMessage message = new DhPublicKeyMessage(userId, publicKeyBase64, callId);
+    String json = gson.toJson(message);
+    String destination = "/app/call/" + callId + "/e2ee/dh-key";
+    return send(destination, json)
+            .retryWhen((Flowable<Throwable> errors) ->
+                    errors.zipWith(
+                                    Flowable.range(1, 3),
+                                    (Throwable error, Integer attempt) -> {
+                                      if (attempt < 3) {
+                                        Log.d(TAG, "Retrying sendDhPublicKey, attempt " + attempt);
+                                        return attempt;
+                                      } else {
+                                        throw Exceptions.propagate(error);
+                                      }
+                                    }
+                            )
+                            .flatMap((Integer attempt) ->
+                                    Flowable.timer(attempt, TimeUnit.SECONDS)
+                            )
+            );
+  }
+
+  public Completable sendWrappedGroupKey(String callId, WrappedGroupKeyMessage message) {
+    String json = gson.toJson(message);
+    String destination = "/app/call/" + callId + "/e2ee/wrapped-key";
+    return send(destination, json)
+            .retryWhen((Flowable<Throwable> errors) ->
+                    errors.zipWith(
+                                    Flowable.range(1, 3),
+                                    (Throwable error, Integer attempt) -> {
+                                      if (attempt < 3) {
+                                        Log.d(TAG, "Retrying sendWrappedGroupKey, attempt " + attempt);
+                                        return attempt;
+                                      } else {
+                                        throw Exceptions.propagate(error);
+                                      }
+                                    }
+                            )
+                            .flatMap((Integer attempt) ->
+                                    Flowable.timer(attempt, TimeUnit.SECONDS)
+                            )
+            );
+  }
+
+  public Completable sendE2eeReady(String callId, String userId) {
+    E2eeReadyMessage message = new E2eeReadyMessage(userId, callId);
+    String json = gson.toJson(message);
+    String destination = "/app/call/" + callId + "/e2ee/ready";
+    return send(destination, json)
+            .retryWhen((Flowable<Throwable> errors) ->
+                    errors.zipWith(
+                                    Flowable.range(1, 3),
+                                    (Throwable error, Integer attempt) -> {
+                                      if (attempt < 3) {
+                                        Log.d(TAG, "Retrying sendE2eeReady, attempt " + attempt);
+                                        return attempt;
+                                      } else {
+                                        throw Exceptions.propagate(error);
+                                      }
+                                    }
+                            )
+                            .flatMap((Integer attempt) ->
+                                    Flowable.timer(attempt, TimeUnit.SECONDS)
+                            )
+            );
+  }
+
+  public Disposable subscribeToDhKeys(String callId, Consumer<DhPublicKeyMessage> onKeyReceived, Consumer<Throwable> onError) {
+    if (stompClient == null || !isConnected) {
+      Log.w(TAG, "Cannot subscribe to DH keys: not connected");
+      return null;
+    }
+
+    String topic = "/topic/call/" + callId + "/e2ee/dh-key";
+    return stompClient.topic(topic)
+            .subscribeOn(Schedulers.io())
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe(
+                    msg -> {
+                      try {
+                        DhPublicKeyMessage keyMsg = gson.fromJson(msg.getPayload(), DhPublicKeyMessage.class);
+                        Log.d(TAG, "Received DH public key from: " + keyMsg.getSenderId());
+                        onKeyReceived.accept(keyMsg);
+                      } catch (Exception e) {
+                        Log.e(TAG, "Error parsing DH key message", e);
+                        onError.accept(e);
+                      }
+                    },
+                    onError
+            );
+  }
+
+  public Disposable subscribeToWrappedKeys(Consumer<WrappedGroupKeyMessage> onKeyReceived, Consumer<Throwable> onError) {
+    if (stompClient == null || !isConnected) {
+      Log.w(TAG, "Cannot subscribe to wrapped keys: not connected");
+      return null;
+    }
+
+    String topic = "/user/queue/e2ee/wrapped-key";
+    return stompClient.topic(topic)
+            .subscribeOn(Schedulers.io())
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe(
+                    msg -> {
+                      try {
+                        WrappedGroupKeyMessage keyMsg = gson.fromJson(msg.getPayload(), WrappedGroupKeyMessage.class);
+                        Log.d(TAG, "Received wrapped group key from: " + keyMsg.getInviterId());
+                        onKeyReceived.accept(keyMsg);
+                      } catch (Exception e) {
+                        Log.e(TAG, "Error parsing wrapped key message", e);
+                        onError.accept(e);
+                      }
+                    },
+                    onError
+            );
+  }
+
+  public Disposable subscribeToE2eeReady(String callId, Consumer<E2eeReadyMessage> onReady, Consumer<Throwable> onError) {
+    if (stompClient == null || !isConnected) return null;
+
+    String topic = "/topic/call/" + callId + "/e2ee/ready";
+    return stompClient.topic(topic)
+            .subscribeOn(Schedulers.io())
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe(
+                    msg -> {
+                      try {
+                        E2eeReadyMessage readyMsg = gson.fromJson(msg.getPayload(), E2eeReadyMessage.class);
+                        Log.d(TAG, "Received E2EE ready signal from: " + readyMsg.getUserId());
+                        onReady.accept(readyMsg);
+                      } catch (Exception e) {
+                        onError.accept(e);
+                      }
+                    },
+                    onError
+            );
   }
 }

@@ -9,14 +9,20 @@ public class NotificationDto implements Serializable {
   private long timestamp;
   private Long callerId;
   private String callerName;
+  private String initiatorDhPublicKey;
 
   public NotificationDto() {}
 
-  public NotificationDto(String type, String message, String data, long timestamp) {
+  public NotificationDto(String type, String message, String data, long timestamp, String initiatorDhPublicKey) {
     this.type = type;
     this.message = message;
     this.data = data;
     this.timestamp = timestamp;
+    this.initiatorDhPublicKey = initiatorDhPublicKey;
+  }
+
+  public NotificationDto(String type, String message, String data, long timestamp) {
+    this(type, message, data, timestamp, null);
   }
 
   public String getType() { return type; }
@@ -45,5 +51,12 @@ public class NotificationDto implements Serializable {
 
   public void setCallerName(String callerName) {
     this.callerName = callerName;
+  }
+  public String getInitiatorDhPublicKey() {
+    return initiatorDhPublicKey;
+  }
+
+  public void setInitiatorDhPublicKey(String initiatorDhPublicKey) {
+    this.initiatorDhPublicKey = initiatorDhPublicKey;
   }
 }

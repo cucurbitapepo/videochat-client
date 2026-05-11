@@ -22,19 +22,16 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false // Включите true для продакшена (ProGuard/R8)
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Важно: убедитесь, что debuggable выключен для release
             isDebuggable = false
         }
 
         debug {
-            // Для debug версии флаг debuggable включен по умолчанию
             isDebuggable = true
-            // Можно добавить_suffix, чтобы отличать пакеты
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
@@ -75,7 +72,6 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.0")
 
     implementation("io.livekit:livekit-android:2.24.1")
-//    implementation("io.livekit:livekit-android:2.0.0")
 //    implementation("io.livekit:livekit-android-webrtc:2.24.1")
 
 //    implementation(libs.rxandroid)
@@ -93,6 +89,7 @@ dependencies {
 
     implementation("com.google.protobuf:protobuf-javalite:3.21.12")
 
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.84")
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)

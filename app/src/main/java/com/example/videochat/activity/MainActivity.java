@@ -93,6 +93,7 @@ public class MainActivity extends AppCompatActivity {
     intent.putExtra(IncomingCallActivity.EXTRA_CALL_ID, notification.getData());
     intent.putExtra(IncomingCallActivity.EXTRA_CALLER_ID, notification.getCallerId());
     intent.putExtra(IncomingCallActivity.EXTRA_CALLER_NAME, notification.getCallerName());
+    intent.putExtra(IncomingCallActivity.EXTRA_INITIATOR_DH_PUBLIC_KEY, notification.getInitiatorDhPublicKey());
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
     Log.d("MAIN", "Starting IncomingCallActivity: callId=" + notification.getData() +
                   ", callerId=" + notification.getCallerId());
