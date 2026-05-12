@@ -1,6 +1,8 @@
 package com.example.videochat.websocket;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.lifecycle.MutableLiveData;
@@ -33,7 +35,7 @@ import ua.naiksoftware.stomp.StompClient;
 
 public class StompClientManager {
   private static final String TAG = "StompClient";
-  private static final String WS_URL = "wss://84.54.59.153:8443/api/v1/ws";
+  private static final String WS_URL = "wss://vkr-videochat.duckdns.org/api/v1/ws";
 
   private final Context context;
   private final Gson gson;
@@ -44,6 +46,10 @@ public class StompClientManager {
   private final CompositeDisposable disposables = new CompositeDisposable();
   private boolean isConnected = false;
   private String authToken;
+
+  private int reconnectAttempts = 0;
+  private static final int MAX_RECONNECT_ATTEMPTS = 5;
+  private static final long INITIAL_RECONNECT_DELAY_MS = 2000;
 
   public StompClientManager(Context context) {
     this.context = context;
@@ -90,6 +96,7 @@ public class StompClientManager {
               .subscribe(lifecycleEvent -> {
                 switch (lifecycleEvent.getType()) {
                   case OPENED:
+                    reconnectAttempts = 0;
                     Log.d(TAG, "WebSocket connected");
                     isConnected = true;
                     connectionState.postValue(true);
@@ -98,6 +105,32 @@ public class StompClientManager {
 
                   case ERROR:
                     Log.e(TAG, "WebSocket error", lifecycleEvent.getException());
+                    Throwable error = lifecycleEvent.getException();
+                    if (error instanceof java.net.SocketException ||
+                        error instanceof java.io.EOFException ||
+                        error instanceof java.io.IOException) {
+
+                      reconnectAttempts++;
+                      if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+                        Log.e(TAG, "Max reconnect attempts (" + MAX_RECONNECT_ATTEMPTS + ") reached, giving up");
+                        connectionState.postValue(false);
+                        return;
+                      }
+
+                      long delay = Math.min(INITIAL_RECONNECT_DELAY_MS * reconnectAttempts, 30000);
+                      Log.w(TAG, "Reconnect attempt " + reconnectAttempts + "/" + MAX_RECONNECT_ATTEMPTS +
+                                 " in " + delay + "ms");
+
+                      isConnected = false;
+                      connectionState.postValue(false);
+                      if (stompClient != null) {
+                        try { stompClient.disconnect(); } catch (Exception e) { /* ignore */ }
+                        stompClient = null;
+                      }
+
+                      new Handler(Looper.getMainLooper())
+                              .postDelayed(StompClientManager.this::connect, delay);
+                    }
                     break;
 
                   case CLOSED:

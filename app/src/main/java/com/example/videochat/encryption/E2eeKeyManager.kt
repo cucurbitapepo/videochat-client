@@ -306,7 +306,7 @@ class E2eeKeyManager(
         }
 
         isE2eeCompleted = true
-        Log.d(TAG, "🎉 checkBothReady() called — E2EE exchange complete!")
+        Log.d(TAG, "checkBothReady() called — E2EE exchange complete!")
         onE2eeReady()
     }
 

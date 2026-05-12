@@ -15,7 +15,7 @@ import retrofit2.converter.gson.GsonConverterFactory;
 
 public class ApiClient {
 
-  public static final String BASE_URL = "https://84.54.59.153:8443/api/v1/";
+  public static final String BASE_URL = "https://vkr-videochat.duckdns.org/api/v1/";
   private static Retrofit retrofit = null;
   private static AuthService authService;
   private static UserApi userApi;
