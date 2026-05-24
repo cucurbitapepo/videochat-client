@@ -6,6 +6,7 @@ import java.util.Set;
 public class CallDto {
   private String callId;
   private Long callerId;
+  private CallStatus status;
   private Set<Long> participants;
   private LocalDateTime createdAt;
   private LocalDateTime endedAt;
@@ -34,6 +35,14 @@ public class CallDto {
 
   public void setCallerId(Long callerId) {
     this.callerId = callerId;
+  }
+
+  public CallStatus getStatus() {
+    return status;
+  }
+
+  public void setStatus(CallStatus status) {
+    this.status = status;
   }
 
   public Set<Long> getParticipants() {

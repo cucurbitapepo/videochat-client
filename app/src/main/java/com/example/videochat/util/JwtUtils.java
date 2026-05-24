@@ -83,4 +83,17 @@ public class JwtUtils {
     }
     return null;
   }
+
+  public static Long getCurrentUserId() {
+    String token = App.getAppContext().getSharedPreferences("app_data", MODE_PRIVATE)
+            .getString("auth_token", null);
+    if (token != null) {
+      try {
+        return JwtUtils.getUserIdFromToken(token);
+      } catch (JSONException e) {
+        e.printStackTrace();
+      }
+    }
+    return null;
+  }
 }

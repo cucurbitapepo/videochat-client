@@ -11,14 +11,25 @@
             android:layout_height="wrap_content"
             android:text="Профиль"
             android:textSize="24sp"
+            android:textStyle="bold"
             android:layout_marginBottom="32dp" />
+
+    <TextView
+            android:id="@+id/username_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Загрузка..."
+            android:textSize="18sp"
+            android:textColor="@color/black"
+            android:layout_marginBottom="24dp"
+            android:gravity="center" />
 
     <Button
             android:id="@+id/logout_button"
             android:layout_width="wrap_content"
-            android:layout_height="81dp"
+            android:layout_height="wrap_content"
             android:text="Выйти из аккаунта"
-            android:textSize="24sp"
+            android:textSize="16sp"
             style="@style/Widget.Material3.Button.OutlinedButton" />
 
 </LinearLayout>

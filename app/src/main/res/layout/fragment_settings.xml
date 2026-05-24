@@ -1,8 +1,7 @@
-<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:app="http://schemas.android.com/apk/res-auto"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:gravity="center"
         android:orientation="vertical"
         android:padding="16dp">
 
@@ -11,6 +10,25 @@
             android:layout_height="wrap_content"
             android:text="Настройки"
             android:textSize="24sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:layout_marginBottom="24dp" />
+
+    <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_mute_mic"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Заходить в звонок с выключенным микрофоном"
+            android:textSize="16sp"
+            android:paddingVertical="12dp"
+            app:showText="false" />
+
+    <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_mute_cam"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Заходить в звонок с выключенной камерой"
+            android:textSize="16sp"
+            android:paddingVertical="12dp"
+            app:showText="false" />
 
 </LinearLayout>

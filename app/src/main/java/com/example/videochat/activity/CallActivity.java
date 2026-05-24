@@ -35,6 +35,7 @@ import com.example.videochat.livekit.LiveKitClient;
 import com.example.videochat.livekit.LiveKitManager;
 import com.example.videochat.service.CallForegroundService;
 import com.example.videochat.util.JwtUtils;
+import com.example.videochat.util.SettingsManager;
 import com.example.videochat.websocket.StompClientManager;
 import com.example.videochat.websocket.WebSocketManager;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
@@ -79,6 +80,7 @@ public class CallActivity extends AppCompatActivity {
 
   private static final int CAMERA_PERMISSION_CODE = 100;
   private static final int AUDIO_PERMISSION_CODE = 101;
+  private SettingsManager settingsManager;
 
   // UI
   private SurfaceViewRenderer remoteVideoView;
@@ -131,11 +133,14 @@ public class CallActivity extends AppCompatActivity {
     WebSocketManager.getInstance(this).getStompClientManager().clearPendingNotifications();
 
     setContentView(R.layout.activity_call);
+    settingsManager = SettingsManager.getInstance(this);
 
     handleIntent(getIntent());
     initViews();
 
     setupClickListeners();
+
+    applyCallSettings();
 
     updateMicrophoneButton();
     updateCameraButton();
@@ -526,7 +531,7 @@ public class CallActivity extends AppCompatActivity {
       return;
     }
     Map<String, Object> callRequest = new HashMap<>();
-    callRequest.put("callerId", getCurrentUserId());
+    callRequest.put("callerId", JwtUtils.getCurrentUserId());
     callRequest.put("receiverId", receiverId);
     callRequest.put("callId", callId);
     callRequest.put("status", "request");
@@ -924,20 +929,27 @@ public class CallActivity extends AppCompatActivity {
   }
 
   private void sendCallEndedNotification() {
+    String callId = getIntent().getStringExtra("CALL_ID");
+    if (callId == null) return;
+
     if (isCallAccepted) {
+      ApiClient.getCallApi().endCall(callId)
+              .enqueue(new Callback<CallDto>() {
+                @Override
+                public void onResponse(Call<CallDto> call, Response<CallDto> response) {
+                  if (response.isSuccessful()) {
+                    Log.d(TAG, "Call ended via REST, status updated in DB");
+                  } else {
+                    Log.w(TAG, "Failed to end call via REST: " + response.code());
+                  }
+                }
 
-      Map<String, Object> callStatus = new HashMap<>();
-      callStatus.put("callId", getIntent().getStringExtra("CALL_ID"));
-      callStatus.put("status", "ended");
-
-      String jsonRequest = new Gson().toJson(callStatus);
-
-      WebSocketManager.getInstance(this).getStompClientManager()
-              .send("/app/call/status", jsonRequest)
-              .subscribe();
+                @Override
+                public void onFailure(Call<CallDto> call, Throwable t) {
+                  Log.w(TAG, "Network error ending call", t);
+                }
+              });
     } else {
-      String callId = getIntent().getStringExtra("CALL_ID");
-      if (callId == null) return;
 
       ApiClient.getCallApi().cancelCall(callId)
               .enqueue(new Callback<CallDto>() {
@@ -973,18 +985,16 @@ public class CallActivity extends AppCompatActivity {
     });
   }
 
-  private Long getCurrentUserId() {
-    String token = getSharedPreferences("app_data", MODE_PRIVATE)
-            .getString("auth_token", null);
-
-    if (token != null) {
-      try {
-        return JwtUtils.getUserIdFromToken(token);
-      } catch (Exception e) {
-        Log.e("USER", "Error parsing user ID", e);
-      }
+  private void applyCallSettings() {
+    if (settingsManager.shouldMuteMicOnJoin()) {
+      isMicrophoneEnabled = false;
+      Log.d(TAG, "Applied setting: mute mic on join");
     }
-    return null;
+
+    if (settingsManager.shouldMuteCamOnJoin()) {
+      isCameraEnabled = false;
+      Log.d(TAG, "Applied setting: mute cam on join");
+    }
   }
 
   private void clearVideoRenderers() {

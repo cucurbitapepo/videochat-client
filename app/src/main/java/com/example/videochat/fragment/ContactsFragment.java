@@ -30,78 +30,6 @@ import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 
-//public class ContactsFragment extends Fragment implements SearchManager.SearchCallback {
-//
-//  private TextInputEditText searchInput;
-//  private RecyclerView resultsRecycler;
-//  private ProgressBar progressBar;
-//  private TextView emptyView;
-//  private SearchManager searchManager;
-//  private UserSearchAdapter adapter;
-//
-//  @Override
-//  public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
-//    View view = inflater.inflate(R.layout.fragment_contacts, container, false);
-//
-//    searchInput = view.findViewById(R.id.search_input);
-//    resultsRecycler = view.findViewById(R.id.results_recycler);
-//    progressBar = view.findViewById(R.id.progress_bar);
-//    emptyView = view.findViewById(R.id.empty_view);
-//
-//    resultsRecycler.setLayoutManager(new LinearLayoutManager(getContext()));
-//    adapter = new UserSearchAdapter();
-//    resultsRecycler.setAdapter(adapter);
-//
-//    searchManager = new SearchManager();
-//    searchManager.setSearchCallback(this);
-//
-//    searchInput.addTextChangedListener(new TextWatcher() {
-//      @Override
-//      public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-//
-//      @Override
-//      public void onTextChanged(CharSequence s, int start, int before, int count) {}
-//
-//      @Override
-//      public void afterTextChanged(Editable s) {
-//        searchManager.query(s.toString());
-//      }
-//    });
-//
-//    return view;
-//  }
-//
-//  @Override
-//  public void onResults(List<UserSearchResultDto> results) {
-//    if (results == null || results.isEmpty()) {
-//      adapter.setUsers(null);
-//      emptyView.setVisibility(View.VISIBLE);
-//    } else {
-//      adapter.setUsers(results);
-//      emptyView.setVisibility(View.GONE);
-//    }
-//  }
-//
-//  @Override
-//  public void onLoading(boolean isLoading) {
-//    progressBar.setVisibility(isLoading ? View.VISIBLE : View.GONE);
-//  }
-//
-//  @Override
-//  public void onError(String message) {
-//    emptyView.setText(message);
-//    emptyView.setVisibility(View.VISIBLE);
-//  }
-//
-//  @Override
-//  public void onEmptyQuery() {
-//    adapter.setUsers(null);
-//    emptyView.setText("Введите минимум 3 символа");
-//    emptyView.setVisibility(View.VISIBLE);
-//  }
-//}
-
-
 public class ContactsFragment extends Fragment implements SearchManager.SearchCallback {
 
   private TextInputEditText searchInput;
@@ -116,13 +44,11 @@ public class ContactsFragment extends Fragment implements SearchManager.SearchCa
   public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
     View view = inflater.inflate(R.layout.fragment_contacts, container, false);
 
-    // Инициализация UI
     searchInput = view.findViewById(R.id.search_input);
     resultsRecycler = view.findViewById(R.id.results_recycler);
     progressBar = view.findViewById(R.id.progress_bar);
     emptyView = view.findViewById(R.id.empty_view);
 
-    // Настройка RecyclerView
     resultsRecycler.setLayoutManager(new LinearLayoutManager(getContext()));
     adapter = new ContactAdapter(user -> {
       showUserProfile(user);
@@ -130,11 +56,9 @@ public class ContactsFragment extends Fragment implements SearchManager.SearchCa
     });
     resultsRecycler.setAdapter(adapter);
 
-    // Инициализация SearchManager
     searchManager = new SearchManager();
     searchManager.setSearchCallback(this);
 
-    // Настройка TextWatcher
     searchInput.addTextChangedListener(new TextWatcher() {
       @Override
       public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -157,7 +81,6 @@ public class ContactsFragment extends Fragment implements SearchManager.SearchCa
       }
     });
 
-    // Загрузка контактов при первом открытии
     loadContacts();
 
     return view;
@@ -173,7 +96,6 @@ public class ContactsFragment extends Fragment implements SearchManager.SearchCa
         progressBar.setVisibility(View.GONE);
 
         if (response.isSuccessful() && response.body() != null && !response.body().isEmpty()) {
-          // Преобразуем ContactDto в UserSearchResultDto
           List<UserSearchResultDto> contacts = response.body().stream()
                   .map(contact -> {
                     UserSearchResultDto dto = new UserSearchResultDto();
@@ -208,7 +130,6 @@ public class ContactsFragment extends Fragment implements SearchManager.SearchCa
     dialog.show(getParentFragmentManager(), "user_profile");
   }
 
-  // Реализация SearchCallback
   @Override
   public void onResults(List<UserSearchResultDto> results) {
     if (results == null || results.isEmpty()) {
@@ -216,7 +137,6 @@ public class ContactsFragment extends Fragment implements SearchManager.SearchCa
       emptyView.setText("Пользователи не найдены");
       emptyView.setVisibility(View.VISIBLE);
     } else {
-      // Разделяем результаты на контакты и не-контакты
       List<UserSearchResultDto> contacts = new ArrayList<>();
       List<UserSearchResultDto> others = new ArrayList<>();
 
