@@ -28,6 +28,7 @@ import androidx.lifecycle.Observer;
 import com.example.videochat.R;
 import com.example.videochat.api.ApiClient;
 import com.example.videochat.dialog.IncomingCallDialog;
+import com.example.videochat.dto.CallDto;
 import com.example.videochat.dto.RoomTokenResponse;
 import com.example.videochat.encryption.E2eeKeyManager;
 import com.example.videochat.livekit.LiveKitClient;
@@ -152,6 +153,9 @@ public class CallActivity extends AppCompatActivity {
     isCallAccepted = false;
     if (intent != null && "CALL_NOTIFICATION".equals(intent.getAction())) {
       String callId = intent.getStringExtra("CALL_ID");
+      if (callId != null) {
+        getIntent().putExtra("CALL_ID", callId);
+      }
       isCaller = intent.getBooleanExtra("IS_CALLER", false);
 
       getIntent().putExtra("CALL_ID", callId);
@@ -401,46 +405,8 @@ public class CallActivity extends AppCompatActivity {
       Log.w(TAG, "Local participant not available yet");
       return;
     }
-
-    BuildersKt.launch(
-            CoroutineScopeKt.MainScope(),
-            Dispatchers.getMain(),
-            CoroutineStart.DEFAULT,
-            (scope, continuation) -> {
-              boolean audioEnabled = false;
-
-              try {
-                localParticipant.setMicrophoneEnabled(true, EMPTY_CONTINUATION);
-                audioEnabled = true;
-                Log.d(TAG, "Microphone enabled");
-              } catch (Exception e) {
-                Log.w(TAG, "Microphone unavailable, continuing without audio", e);
-              }
-
-              try {
-                Log.d(TAG, "Trying to enable camera, isCameraEnabled=" + isCameraEnabled);
-                localParticipant.setCameraEnabled(isCameraEnabled, EMPTY_CONTINUATION);
-                Log.d(TAG, "Camera enabled");
-
-                if (isCameraEnabled) {
-                  new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    LocalVideoTrack localTrack = liveKitClient.getLocalVideoTrack();
-                    if (localTrack != null) {
-                      Log.d(TAG, "Local track: enabled=" + localTrack.getEnabled());
-                    } else {
-                      Log.w(TAG, "localTrack is still NULL after 1s");
-                    }
-                  }, 1000);
-                }
-              } catch (TrackException.PublishException e) {
-                Log.e(TAG, "Camera failed", e);
-                if (isCameraEnabled) {
-//                  runOnUiThread(this::startCameraXPreview);
-                }
-              }
-
-              return kotlin.Unit.INSTANCE;
-            });
+    syncCameraStateWithPermission();
+    syncMicrophoneStateWithPermission();
   }
 
   // ==================== Call Flow ====================
@@ -496,6 +462,7 @@ public class CallActivity extends AppCompatActivity {
 
   private void connectToLiveKit(String callId) {
     Log.d(TAG, "connectToLiveKit() called");
+    Log.d(TAG, "callId=" + callId);
     ApiClient.getCallApi().getCallToken(callId)
             .enqueue(new Callback<>() {
               @Override
@@ -537,6 +504,13 @@ public class CallActivity extends AppCompatActivity {
               @Override
               public void onFailure(Call<RoomTokenResponse> call, Throwable t) {
                 Log.e(TAG, "Token request failed", t);
+                if (t instanceof java.net.SocketTimeoutException ||
+                    t instanceof java.net.UnknownHostException ||
+                    t instanceof javax.net.ssl.SSLException) {
+
+                  showErrorAndFinish("Не удалось подключиться к серверу. Проверьте соединение с интернетом.");
+                  return;
+                }
                 finishCall("Ошибка сети: " + t.getMessage());
               }
             });
@@ -622,33 +596,42 @@ public class CallActivity extends AppCompatActivity {
   // ==================== UI Controls ====================
 
   private void toggleMicrophone() {
-    isMicrophoneEnabled = !isMicrophoneEnabled;
-    if (liveKitClient != null) {
-      try {
-        liveKitClient.toggleMicrophone();
-        updateMicrophoneButton();
-      } catch (TrackException.PublishException e) {
-        Toast.makeText(this, "Ошибка микрофона", Toast.LENGTH_SHORT).show();
-      }
+    boolean hasMicrophonePermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.RECORD_AUDIO
+    ) == PackageManager.PERMISSION_GRANTED;
+
+    if (!hasMicrophonePermission) {
+      Log.d(TAG, "Requesting microphone permission before toggle");
+      ActivityCompat.requestPermissions(this,
+              new String[]{Manifest.permission.RECORD_AUDIO},
+              AUDIO_PERMISSION_CODE);
+      return;
     }
+
+    isMicrophoneEnabled = !isMicrophoneEnabled;
+    Log.d(TAG, "Microphone toggle: new state=" + isMicrophoneEnabled);
+
+    syncMicrophoneStateWithPermission();
+
   }
 
   private void toggleCamera() {
-    isCameraEnabled = !isCameraEnabled;
+    boolean hasCameraPermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.CAMERA
+    ) == PackageManager.PERMISSION_GRANTED;
 
-    if (liveKitClient != null) {
-      try {
-        liveKitClient.toggleCamera();
-        updateCameraButton();
-        updateLocalCameraUI(isCameraEnabled);
-
-        if (localAvatarView != null) {
-          localAvatarView.setVisibility(isCameraEnabled ? View.GONE : View.VISIBLE);
-        }
-      } catch (TrackException.PublishException e) {
-        Toast.makeText(this, "Ошибка камеры", Toast.LENGTH_SHORT).show();
-      }
+    if (!hasCameraPermission) {
+      Log.d(TAG, "Requesting camera permission before toggle");
+      ActivityCompat.requestPermissions(this,
+              new String[]{Manifest.permission.CAMERA},
+              CAMERA_PERMISSION_CODE);
+      return;
     }
+
+    isCameraEnabled = !isCameraEnabled;
+    Log.d(TAG, "Camera toggle: new state=" + isCameraEnabled);
+
+    syncCameraStateWithPermission();
   }
 
   private void updateMicrophoneButton() {
@@ -667,7 +650,11 @@ public class CallActivity extends AppCompatActivity {
 
   private void updateLocalCameraUI(boolean cameraEnabled) {
     runOnUiThread(() -> {
-      if (cameraEnabled) {
+      boolean hasCameraPermission = ContextCompat.checkSelfPermission(
+              this, Manifest.permission.CAMERA
+      ) == PackageManager.PERMISSION_GRANTED;
+
+      if (cameraEnabled && hasCameraPermission) {
         localVideoView.setVisibility(View.VISIBLE);
         localVideoView.setZOrderMediaOverlay(true);
         localVideoView.bringToFront();
@@ -676,7 +663,8 @@ public class CallActivity extends AppCompatActivity {
         localVideoView.setVisibility(View.GONE);
         localMutedContainer.setVisibility(View.VISIBLE);
       }
-      Log.d(TAG, "Local camera UI updated: enabled=" + cameraEnabled);
+      Log.d(TAG, "Local camera UI updated: enabled=" + cameraEnabled +
+                 ", hasPermission=" + hasCameraPermission);
     });
   }
 
@@ -715,6 +703,73 @@ public class CallActivity extends AppCompatActivity {
     });
   }
 
+  private void syncCameraStateWithPermission() {
+    if (liveKitClient == null) return;
+
+    LocalParticipant localParticipant = liveKitClient.getLocalParticipant();
+    if (localParticipant == null) return;
+
+    boolean hasCameraPermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.CAMERA
+    ) == PackageManager.PERMISSION_GRANTED;
+
+    if (!hasCameraPermission) {
+      if (isCameraEnabled) {
+        Log.d(TAG, "Camera permission revoked, forcing mute");
+        isCameraEnabled = false;
+      }
+      try {
+        localParticipant.setCameraEnabled(false, EMPTY_CONTINUATION);
+      } catch (Exception e) {
+        Log.w(TAG, "Failed to mute camera", e);
+      }
+    } else {
+      try {
+        localParticipant.setCameraEnabled(isCameraEnabled, EMPTY_CONTINUATION);
+        Log.d(TAG, "Camera track set to: " + isCameraEnabled);
+      } catch (Exception e) {
+        Log.e(TAG, "Failed to set camera state", e);
+        isCameraEnabled = false;
+      }
+    }
+
+    updateCameraButton();
+    updateLocalCameraUI(isCameraEnabled);
+  }
+
+  private void syncMicrophoneStateWithPermission() {
+    if (liveKitClient == null) return;
+
+    LocalParticipant localParticipant = liveKitClient.getLocalParticipant();
+    if (localParticipant == null) return;
+
+    boolean hasAudioPermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.RECORD_AUDIO
+    ) == PackageManager.PERMISSION_GRANTED;
+
+    if (!hasAudioPermission) {
+      if (isMicrophoneEnabled) {
+        Log.d(TAG, "Audio permission revoked, forcing mute");
+        isMicrophoneEnabled = false;
+      }
+      try {
+        localParticipant.setMicrophoneEnabled(false, EMPTY_CONTINUATION);
+      } catch (Exception e) {
+        Log.w(TAG, "Failed to mute microphone", e);
+      }
+    } else {
+      try {
+        localParticipant.setMicrophoneEnabled(isMicrophoneEnabled, EMPTY_CONTINUATION);
+        Log.d(TAG, "Microphone track set to: " + isMicrophoneEnabled);
+      } catch (Exception e) {
+        Log.e(TAG, "Failed to set microphone state", e);
+        isMicrophoneEnabled = false;
+      }
+    }
+
+    updateMicrophoneButton();
+  }
+
   // ==================== Permissions ====================
 
   private void checkCameraPermission() {
@@ -735,25 +790,32 @@ public class CallActivity extends AppCompatActivity {
   @Override
   public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
     super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
     if (requestCode == CAMERA_PERMISSION_CODE) {
-      if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+      boolean granted = grantResults.length > 0 &&
+                        grantResults[0] == PackageManager.PERMISSION_GRANTED;
+
+      if (granted) {
         Log.d(TAG, "Camera permission granted");
+        syncCameraStateWithPermission();
       } else {
+        Log.d(TAG, "Camera permission denied");
         Toast.makeText(this, "Разрешение камеры отклонено", Toast.LENGTH_SHORT).show();
+        isCameraEnabled = false;
+        syncCameraStateWithPermission();
       }
     } else if (requestCode == AUDIO_PERMISSION_CODE) {
-      if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+      boolean granted = grantResults.length > 0 &&
+                        grantResults[0] == PackageManager.PERMISSION_GRANTED;
+
+      if (granted) {
         Log.d(TAG, "Audio permission granted");
-        if (liveKitClient != null) {
-          try {
-            liveKitClient.toggleMicrophone();
-          } catch (Exception e) {
-            Log.e(TAG, "Failed to enable microphone", e);
-          }
-        }
+        syncMicrophoneStateWithPermission();
       } else {
+        Log.d(TAG, "Audio permission denied");
         Toast.makeText(this, "Разрешение на запись аудио отклонено", Toast.LENGTH_SHORT).show();
         isMicrophoneEnabled = false;
+        syncMicrophoneStateWithPermission();
       }
     }
   }
@@ -862,15 +924,53 @@ public class CallActivity extends AppCompatActivity {
   }
 
   private void sendCallEndedNotification() {
-    Map<String, Object> callStatus = new HashMap<>();
-    callStatus.put("callId", getIntent().getStringExtra("CALL_ID"));
-    callStatus.put("status", "ended");
+    if (isCallAccepted) {
 
-    String jsonRequest = new Gson().toJson(callStatus);
+      Map<String, Object> callStatus = new HashMap<>();
+      callStatus.put("callId", getIntent().getStringExtra("CALL_ID"));
+      callStatus.put("status", "ended");
 
-    WebSocketManager.getInstance(this).getStompClientManager()
-            .send("/app/call/status", jsonRequest)
-            .subscribe();
+      String jsonRequest = new Gson().toJson(callStatus);
+
+      WebSocketManager.getInstance(this).getStompClientManager()
+              .send("/app/call/status", jsonRequest)
+              .subscribe();
+    } else {
+      String callId = getIntent().getStringExtra("CALL_ID");
+      if (callId == null) return;
+
+      ApiClient.getCallApi().cancelCall(callId)
+              .enqueue(new Callback<CallDto>() {
+                @Override
+                public void onResponse(Call<CallDto> call, Response<CallDto> response) {
+                  if (response.isSuccessful()) {
+                    Log.d(TAG, "Call cancellation request sent to server");
+                  } else {
+                    Log.w(TAG, "Failed to cancel call: " + response.code());
+                  }
+                }
+
+                @Override
+                public void onFailure(Call<CallDto> call, Throwable t) {
+                  Log.w(TAG, "Network error sending cancellation", t);
+                }
+              });
+    }
+  }
+
+  private void showErrorAndFinish(String message) {
+    if (isFinishing()) return;
+
+    runOnUiThread(() -> {
+      if (isFinishing()) return;
+
+      new AlertDialog.Builder(this)
+              .setTitle("Ошибка соединения")
+              .setMessage(message)
+              .setPositiveButton("Закрыть", (dialog, which) -> finish())
+              .setCancelable(false)
+              .show();
+    });
   }
 
   private Long getCurrentUserId() {

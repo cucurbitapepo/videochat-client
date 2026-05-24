@@ -1,5 +1,6 @@
 package com.example.videochat.activity;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.WindowManager;
@@ -9,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.example.videochat.dialog.IncomingCallDialog;
 import com.example.videochat.dto.NotificationDto;
 import com.example.videochat.dto.UserDto;
+import com.example.videochat.websocket.WebSocketManager;
 
 public class IncomingCallActivity extends AppCompatActivity {
   public static final String EXTRA_CALL_ID = "callId";
@@ -19,6 +21,12 @@ public class IncomingCallActivity extends AppCompatActivity {
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+
+    if ("DISMISS_CALL".equals(getIntent().getAction())) {
+      Log.d("INCOMING", "Dismissing due to cancellation");
+      finish();
+      return;
+    }
 
     getWindow().addFlags(
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
@@ -38,6 +46,18 @@ public class IncomingCallActivity extends AppCompatActivity {
       return;
     }
 
+    WebSocketManager.getInstance(this).getNotificationEvent().observe(this, notification -> {
+      if (notification == null) return;
+
+      if ("CALL_STATUS".equals(notification.getType()) &&
+          "cancelled".equals(notification.getMessage()) &&
+          callId != null && callId.equals(notification.getData())) {
+
+        Log.d("INCOMING", "Received cancellation via STOMP, dismissing dialog");
+        finish();
+      }
+    });
+
     NotificationDto notification = new NotificationDto();
     notification.setType("CALL_REQUEST");
     notification.setData(callId);
@@ -46,6 +66,21 @@ public class IncomingCallActivity extends AppCompatActivity {
     notification.setTimestamp(System.currentTimeMillis());
     notification.setInitiatorDhPublicKey(initiatorDhPublicKey);
     showIncomingCallDialog(notification);
+  }
+
+  @Override
+  protected void onNewIntent(Intent intent) {
+    super.onNewIntent(intent);
+
+    if ("DISMISS_CALL".equals(intent.getAction())) {
+      String callId = intent.getStringExtra("callId");
+      String currentCallId = getIntent().getStringExtra("callId");
+
+      if (callId != null && callId.equals(currentCallId)) {
+        Log.d("INCOMING", "Dismissing active call dialog");
+        finish();
+      }
+    }
   }
 
   private void showIncomingCallDialog(NotificationDto notification) {

@@ -1,5 +1,6 @@
 package com.example.videochat.receiver;
 
+import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -7,6 +8,7 @@ import android.util.Log;
 
 import com.example.videochat.activity.CallActivity;
 import com.example.videochat.service.CallService;
+import com.example.videochat.util.NotificationUtils;
 
 public class IncomingCallReceiver extends BroadcastReceiver {
   private static final String TAG = "IncomingCallReceiver";
@@ -32,6 +34,9 @@ public class IncomingCallReceiver extends BroadcastReceiver {
     CallService callService = new CallService();
     callService.acceptCall(callId, success -> {
       if (success) {
+        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        int notificationId = NotificationUtils.getNotificationId(callId);
+        nm.cancel(notificationId);
         Intent callIntent = new Intent(context, CallActivity.class);
         callIntent.putExtra("CALL_ID", callId);
         callIntent.putExtra("IS_CALLER", false);
@@ -44,7 +49,13 @@ public class IncomingCallReceiver extends BroadcastReceiver {
   private void handleDeclineCall(Context context, String callId) {
     CallService callService = new CallService();
     callService.rejectCall(callId, success -> {
-      if (!success) {
+      if (success) {
+        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        int notificationId = NotificationUtils.getNotificationId(callId);
+        nm.cancel(notificationId);
+
+        Log.d(TAG, "Call declined, notification cancelled: " + callId);
+      } else {
         Log.e(TAG, "Failed to reject call: " + callId);
       }
     });

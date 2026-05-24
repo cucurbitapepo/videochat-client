@@ -1,6 +1,7 @@
 package com.example.videochat.encryption
 
 import android.util.Log
+import androidx.lifecycle.Observer
 import com.example.videochat.livekit.LiveKitRoomConnector
 import com.example.videochat.websocket.StompClientManager
 import io.livekit.android.room.Room
@@ -57,14 +58,41 @@ class E2eeKeyManager(
     private var bufferedWrappedKey: Triple<ByteArray, ByteArray, Int>? = null
     private var isKeySet: Boolean = false
     private var isE2eeCompleted: Boolean = false
+    private var connectionObserver: Observer<Boolean>? = null
 
     private val disposables = CompositeDisposable()
 
-    private val DH_TIMEOUT_SEC = 10L
     private val KEY_EXCHANGE_TIMEOUT_SEC = 15L
 
     fun start() {
         Log.d(TAG, "Starting E2EE key exchange for call $callId (isInitiator=$isInitiator)")
+
+        if (!stompClient.isConnected()) {
+            Log.d(TAG, "WebSocket not connected yet, waiting for connection...")
+
+            connectionObserver = Observer<Boolean> { connected ->
+                if (connected) {
+                    Log.d(TAG, "WebSocket connected, proceeding with E2EE key exchange")
+
+                    connectionObserver?.let {
+                        stompClient.connectionState.removeObserver(it)
+                        connectionObserver = null
+                    }
+
+                    performKeyExchange()
+                }
+            }
+
+            connectionObserver?.let {
+                stompClient.connectionState.observeForever(it)
+            }
+        } else {
+            performKeyExchange()
+        }
+    }
+
+    private fun performKeyExchange() {
+        Log.d(TAG, "performKeyExchange() called")
 
         if (isInitiator) {
             dhKeyPair = takeInitiatorKeyPair(callId, localUserId)
@@ -76,7 +104,7 @@ class E2eeKeyManager(
             if (preReceivedInitiatorPublicKey != null) {
                 try {
                     remotePublicKey = SecureKeyExchange.decodePublicKey(preReceivedInitiatorPublicKey)
-                    Log.d(TAG, "Pre-received initiator public key decoded: $remotePublicKey")
+                    Log.d(TAG, "Pre-received initiator public key decoded")
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to decode pre-received public key", e)
                     onError(e)
@@ -91,8 +119,14 @@ class E2eeKeyManager(
             { msg -> handleDhPublicKeyReceived(msg) },
             { e -> onError(e) }
         )
-        disposables.add(dhSubscription)
-        Log.d(TAG, "Subscribed to DH keys topic")
+        if (dhSubscription != null) {
+            disposables.add(dhSubscription)
+            Log.d(TAG, "Subscribed to DH keys topic")
+        } else {
+            Log.e(TAG, "Failed to subscribe to DH keys — WebSocket disconnected?")
+            onError(IllegalStateException("Cannot subscribe to DH keys"))
+            return
+        }
 
         if (!isInitiator) {
             subscribeToWrappedKeys()
@@ -100,16 +134,13 @@ class E2eeKeyManager(
 
         val readySubscription = stompClient.subscribeToE2eeReady(
             callId,
-            { msg ->
-                checkBothReady()
-            },
-            { e ->
-                Log.e(TAG, "Error subscribing to E2EE ready", e)
-                onError(e)
-            }
+            { msg -> checkBothReady() },
+            { e -> onError(e) }
         )
-        disposables.add(readySubscription)
-        Log.d(TAG, "Subscribed to E2EE ready topic")
+        if (readySubscription != null) {
+            disposables.add(readySubscription)
+            Log.d(TAG, "Subscribed to E2EE ready topic")
+        }
 
         val publicKeyBase64 = SecureKeyExchange.encodePublicKey(dhKeyPair!!.public)
         disposables.add(
@@ -323,6 +354,12 @@ class E2eeKeyManager(
 
     fun cleanup() {
         Log.d(TAG, "Cleaning up E2eeKeyManager")
+
+        connectionObserver?.let {
+            stompClient.connectionState.removeObserver(it)
+            connectionObserver = null
+        }
+
         disposables.clear()
         groupKey?.fill(0)
         groupKey = null

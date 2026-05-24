@@ -65,8 +65,14 @@ public class LoginActivity extends AppCompatActivity {
         if (response.isSuccessful() && response.body() != null) {
           String token = response.body().getAccessToken();
           saveToken(token);
-          startActivity(new Intent(LoginActivity.this, MainActivity.class));
-          finish();
+          FirebaseMessaging.getInstance().getToken()
+                  .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                      sendFcmTokenToServer(task.getResult(), () -> proceedToMainActivity());
+                    } else {
+                      proceedToMainActivity();
+                    }
+                  });
         } else {
           showError("Ошибка регистрации");
         }
@@ -100,11 +106,16 @@ public class LoginActivity extends AppCompatActivity {
                   .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
                       String fcmToken = task.getResult();
-                      sendFcmTokenToServer(fcmToken);
+                      Log.d("LOGIN", "FCM Token: " + fcmToken);
+                      sendFcmTokenToServer(fcmToken, () -> {
+                        Log.d("LOGIN", "FCM token sent, proceeding to MainActivity");
+                        proceedToMainActivity();
+                      });
+                    } else {
+                      Log.w("LOGIN", "Failed to get FCM token", task.getException());
+                      proceedToMainActivity();
                     }
                   });
-          startActivity(new Intent(LoginActivity.this, MainActivity.class));
-          finish();
         } else {
           showError("Ошибка входа. Проверьте логин и пароль.");
         }
@@ -115,6 +126,11 @@ public class LoginActivity extends AppCompatActivity {
         showError("Ошибка сети: " + t.getMessage());
       }
     });
+  }
+
+  private void proceedToMainActivity() {
+    startActivity(new Intent(LoginActivity.this, MainActivity.class));
+    finish();
   }
 
   private void saveToken(String token) {
@@ -132,7 +148,7 @@ public class LoginActivity extends AppCompatActivity {
     prefs.edit().putString("current_user", currentUserUsername).apply();
   }
 
-  private void sendFcmTokenToServer(String token) {
+  private void sendFcmTokenToServer(String token, Runnable onSuccess) {
     String authToken = getSharedPreferences("app_data", MODE_PRIVATE)
             .getString("auth_token", null);
 
@@ -146,14 +162,19 @@ public class LoginActivity extends AppCompatActivity {
             .enqueue(new Callback<Void>() {
               @Override
               public void onResponse(Call<Void> call, Response<Void> response) {
-                if (!response.isSuccessful()) {
+                if (response.isSuccessful()) {
+                  Log.d("FCM", "Token sent successfully");
+                  if (onSuccess != null) onSuccess.run();
+                } else {
                   Log.e("FCM", "Failed to send token: " + response.code());
+                  if (onSuccess != null) onSuccess.run();
                 }
               }
 
               @Override
               public void onFailure(Call<Void> call, Throwable t) {
                 Log.e("FCM", "Network error: " + t.getMessage());
+                if (onSuccess != null) onSuccess.run();
               }
             });
   }

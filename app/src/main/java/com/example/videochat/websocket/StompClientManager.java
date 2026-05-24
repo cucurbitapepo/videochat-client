@@ -19,7 +19,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import javax.net.ssl.SSLException;
+
 import io.reactivex.Flowable;
+import io.reactivex.disposables.Disposables;
 import io.reactivex.exceptions.Exceptions;
 import io.reactivex.functions.Consumer;
 
@@ -106,9 +109,16 @@ public class StompClientManager {
                   case ERROR:
                     Log.e(TAG, "WebSocket error", lifecycleEvent.getException());
                     Throwable error = lifecycleEvent.getException();
-                    if (error instanceof java.net.SocketException ||
-                        error instanceof java.io.EOFException ||
-                        error instanceof java.io.IOException) {
+                    boolean isRecoverable = (error instanceof java.net.SocketException ||
+                                             error instanceof java.io.EOFException ||
+                                             error instanceof SSLException ||
+                                             (error.getCause() != null && (
+                                                     error.getCause() instanceof java.net.SocketException ||
+                                                     error.getCause() instanceof java.io.EOFException ||
+                                                     error.getCause() instanceof java.io.IOException ||
+                                                     error.getCause() instanceof javax.net.ssl.SSLException
+                                             )));
+                    if (isRecoverable) {
 
                       reconnectAttempts++;
                       if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
@@ -124,7 +134,9 @@ public class StompClientManager {
                       isConnected = false;
                       connectionState.postValue(false);
                       if (stompClient != null) {
-                        try { stompClient.disconnect(); } catch (Exception e) { /* ignore */ }
+                        try {
+                          stompClient.disconnect();
+                        } catch (Exception e) { /* ignore */ }
                         stompClient = null;
                       }
 
@@ -185,7 +197,7 @@ public class StompClientManager {
   public Disposable subscribeToRoomNotifications(String roomId) {
     if (stompClient == null || !isConnected) {
       Log.w(TAG, "Cannot subscribe to room: not connected");
-      return null;
+      return Disposables.disposed();
     }
 
     String topicPath = "/topic/room/" + roomId;
@@ -249,7 +261,7 @@ public class StompClientManager {
   public Completable send(String destination, String message) {
     if (stompClient == null || !isConnected) {
       Log.w(TAG, "Cannot send message: not connected to WebSocket");
-      return Completable.error(new Exception("WebSocket is not connected"));
+      return Completable.complete();
     }
 
     return stompClient.send(destination, message);
@@ -332,7 +344,7 @@ public class StompClientManager {
   public Disposable subscribeToDhKeys(String callId, Consumer<DhPublicKeyMessage> onKeyReceived, Consumer<Throwable> onError) {
     if (stompClient == null || !isConnected) {
       Log.w(TAG, "Cannot subscribe to DH keys: not connected");
-      return null;
+      return Disposables.disposed();
     }
 
     String topic = "/topic/call/" + callId + "/e2ee/dh-key";
@@ -357,7 +369,7 @@ public class StompClientManager {
   public Disposable subscribeToWrappedKeys(Consumer<WrappedGroupKeyMessage> onKeyReceived, Consumer<Throwable> onError) {
     if (stompClient == null || !isConnected) {
       Log.w(TAG, "Cannot subscribe to wrapped keys: not connected");
-      return null;
+      return Disposables.disposed();
     }
 
     String topic = "/user/queue/e2ee/wrapped-key";
@@ -380,7 +392,7 @@ public class StompClientManager {
   }
 
   public Disposable subscribeToE2eeReady(String callId, Consumer<E2eeReadyMessage> onReady, Consumer<Throwable> onError) {
-    if (stompClient == null || !isConnected) return null;
+    if (stompClient == null || !isConnected) return Disposables.disposed();
 
     String topic = "/topic/call/" + callId + "/e2ee/ready";
     return stompClient.topic(topic)

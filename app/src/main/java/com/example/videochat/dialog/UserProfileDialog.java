@@ -1,5 +1,6 @@
 package com.example.videochat.dialog;
 
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
@@ -202,7 +203,13 @@ public class UserProfileDialog extends BottomSheetDialogFragment {
 
       @Override
       public void onFailure(Call<Void> call, Throwable t) {
-        showError("Ошибка сети: " + t.getMessage());
+        if (!isAdded() || getContext() == null) {
+          Log.w("PROFILE_DIALOG", "Fragment not attached, skipping error display");
+          return;
+        }
+
+        Context ctx = getContext();
+        Toast.makeText(ctx, "Ошибка сети: " + t.getMessage(), Toast.LENGTH_SHORT).show();
       }
     });
   }

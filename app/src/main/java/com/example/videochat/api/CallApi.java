@@ -10,6 +10,7 @@ import retrofit2.http.Body;
 import retrofit2.http.GET;
 import retrofit2.http.POST;
 import retrofit2.http.Path;
+import retrofit2.http.Query;
 
 public interface CallApi {
   @POST("calls")
@@ -21,6 +22,9 @@ public interface CallApi {
   @POST("calls/{callId}/reject")
   Call<CallDto> rejectCall(@Path("callId") String callId);
 
+  @POST("calls/{callId}/cancel")
+  Call<CallDto> cancelCall(@Path("callId") String callId);
+
   @POST("calls/{callId}/end")
   Call<CallDto> endCall(@Path("callId") String callId);
 
@@ -29,5 +33,8 @@ public interface CallApi {
 
   @GET("calls/{callId}/token")
   Call<RoomTokenResponse> getCallToken(@Path("callId") String callId);
+
+  @GET("calls/history")
+  Call<List<CallDto>> getCallHistory(@Query("limit") int limit);
 
 }
